@@ -41,7 +41,7 @@ feeds:
 # AI 大模型配置
 # 支持 OpenAI 兼容接口（OpenAI / DeepSeek / 智谱GLM / 本地模型等）
 ai:
-  model: gpt-4o-mini          # 模型名称
+  model: glm-5.1              # 模型名称（智谱 GLM-5.1）
   api_base: ""                 # API 地址（建议用 GitHub Secrets）
   api_key: ""                  # API Key（建议用 GitHub Secrets）
   language: 中文               # 输出语言
