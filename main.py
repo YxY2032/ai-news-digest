@@ -90,19 +90,23 @@ def generate_summary(articles, config):
 
     api_key = os.environ.get("AI_API_KEY", ai_cfg.get("api_key", ""))
     api_base = os.environ.get(
-        "AI_API_BASE", ai_cfg.get("api_base", "https://open.bigmodel.cn/api/paas/v4/")
+        "AI_API_BASE", ai_cfg.get("api_base", "https://open.bigmodel.cn/api/coding/paas/v4")
     )
-    # 支持 env 覆盖，fallback 到 config，再 fallback 到 glm-4-flash
-    model = os.environ.get("AI_MODEL", ai_cfg.get("model", "glm-4-flash"))
+    model = os.environ.get("AI_MODEL", ai_cfg.get("model", "glm-5.1"))
 
     if not api_key:
         return "⚠️ AI_API_KEY not configured. Skipping AI summary."
 
-    # 调试：打印实际使用的参数（隐藏 key 中间部分）
+    # ---- 调试信息 ----
     masked_key = api_key[:8] + "..." + api_key[-4:] if len(api_key) > 12 else "***"
-    print(f"  API Base: {api_base}")
-    print(f"  Model:    {model}")
-    print(f"  API Key:  {masked_key}")
+    print(f"  [DEBUG] API Base: {api_base}")
+    print(f"  [DEBUG] Model:    {model}")
+    print(f"  [DEBUG] API Key:  {masked_key}")
+    print(f"  [DEBUG] Request URL: {api_base.rstrip('/')}/chat/completions")
+    print(f"  [DEBUG] ENV AI_API_BASE = {os.environ.get('AI_API_BASE', '(not set)')}")
+    print(f"  [DEBUG] ENV AI_MODEL = {os.environ.get('AI_MODEL', '(not set)')}")
+    print(f"  [DEBUG] CONFIG model = {ai_cfg.get('model', '(not set)')}")
+    # ---- 调试结束 ----
 
     client = OpenAI(api_key=api_key, base_url=api_base)
 
