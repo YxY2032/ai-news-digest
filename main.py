@@ -90,7 +90,7 @@ def generate_summary(articles, config):
 
     api_key = os.environ.get("AI_API_KEY", ai_cfg.get("api_key", ""))
     api_base = os.environ.get(
-        "AI_API_BASE", ai_cfg.get("api_base", "https://open.bigmodel.cn/api/paas/v4")
+        "AI_API_BASE", ai_cfg.get("api_base", "https://open.bigmodel.cn/api/coding/paas/v4")
     )
     # 支持 env 覆盖，fallback 到 config，再 fallback 到 glm-4-flash
     model = os.environ.get("AI_MODEL", ai_cfg.get("model", "glm-4-flash"))
