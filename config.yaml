@@ -1,0 +1,57 @@
+# AI News Digest 配置文件
+# ==========================================
+
+# RSS 订阅源（按分类组织，可自行增删）
+feeds:
+  # --- 安全 ---
+  - name: The Hacker News
+    url: https://feeds.feedburner.com/TheHackersNews
+    category: 安全
+
+  - name: Security Affairs
+    url: https://securityaffairs.co/feed
+    category: 安全
+
+  - name: Krebs on Security
+    url: https://krebsonsecurity.com/feed/
+    category: 安全
+
+  - name: BleepingComputer
+    url: https://www.bleepingcomputer.com/feed/
+    category: 安全
+
+  # --- AI ---
+  - name: MIT Technology Review
+    url: https://www.technologyreview.com/feed/
+    category: AI
+
+  - name: AI News (The Verge)
+    url: https://www.theverge.com/rss/ai-artificial-intelligence/index.xml
+    category: AI
+
+  # --- 科技 ---
+  - name: Ars Technica
+    url: https://feeds.arstechnica.com/arstechnica/index
+    category: 科技
+
+  - name: TechCrunch
+    url: https://techcrunch.com/feed/
+    category: 科技
+
+# AI 大模型配置
+# 支持 OpenAI 兼容接口（OpenAI / DeepSeek / 智谱GLM / 本地模型等）
+ai:
+  model: gpt-4o-mini          # 模型名称
+  api_base: ""                 # API 地址（建议用 GitHub Secrets）
+  api_key: ""                  # API Key（建议用 GitHub Secrets）
+  language: 中文               # 输出语言
+
+# Telegram 配置（建议用 GitHub Secrets）
+telegram:
+  bot_token: ""
+  chat_id: ""
+
+# 全局设置
+settings:
+  fetch_hours: 24              # 抓取最近多少小时的文章
+  max_articles: 30             # 每次最多处理文章数
