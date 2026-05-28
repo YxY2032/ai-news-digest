@@ -95,39 +95,50 @@ def generate_summary(articles, config):
     model = os.environ.get("AI_MODEL", ai_cfg.get("model", "glm-5.1"))
 
     if not api_key:
-        return "⚠️ AI_API_KEY not configured. Skipping AI summary."
+        print("  ⚠️ AI_API_KEY not set, using raw article list.")
+        return format_article_list(articles)
 
-    client = OpenAI(api_key=api_key, base_url=api_base)
-
-    article_text = "\n".join(
-        f"[{i+1}] [{a['source']}] {a['title']}\n    {a['description'][:200]}"
+    # 构建文章列表供 AI 处理
+    article_list = "\n\n".join(
+        f"[{i+1}] 标题: {a['title']}\n"
+        f"来源: {a['source']}\n"
+        f"分类: {a['category']}\n"
+        f"摘要: {a['description'][:300]}\n"
+        f"链接: {a['link']}"
         for i, a in enumerate(articles)
     )
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    prompt = f"""你是专业的安全/科技新闻分析师。请为以下 {len(articles)} 篇今日 RSS 文章生成结构化中文摘要。
+    prompt = f"""你是专业的安全/科技新闻分析师。以下是今日 {len(articles)} 篇 RSS 新闻文章。
 
-要求：
-1. 按主题分类（安全、AI、科技等）
-2. 每篇用 1-2 句话概括核心，标注重要性（🔴重要 / 🟡关注 / ⚪一般）
-3. 文末 2-3 句「今日趋势」总结
-4. 格式用 emoji + 纯文本，不用 Markdown 语法
-5. 每篇文章附原链接
+请为每篇文章生成一段简短的中文介绍（1-2句话概括核心内容），然后附上文章标题和链接。
+
+输出格式（严格按此格式，每篇文章之间空一行）：
+
+📰 文章标题
+一句话中文摘要介绍这篇文章的核心内容。
+🔗 标题
+链接
 
 ---
-{article_text}
+
+文章列表：
+
+{article_list}
+
 ---
 
-请输出今日（{today}）新闻摘要："""
+请生成今日（{today}）新闻摘要，共 {len(articles)} 篇："""
 
     try:
+        client = OpenAI(api_key=api_key, base_url=api_base)
         resp = client.chat.completions.create(
             model=model,
             messages=[
                 {
                     "role": "system",
-                    "content": "你是专业新闻分析师，擅长提炼关键信息生成结构化摘要。",
+                    "content": "你是专业新闻分析师，用简洁的中文概括每篇文章的核心内容。输出格式严格按要求。",
                 },
                 {"role": "user", "content": prompt},
             ],
@@ -136,14 +147,33 @@ def generate_summary(articles, config):
         )
         content = resp.choices[0].message.content
         print(f"  [DEBUG] AI response length: {len(content) if content else 0} chars")
-        print(f"  [DEBUG] AI response preview: {(content or '(empty)')[:200]}")
 
         if not content or not content.strip():
-            return "⚠️ AI returned empty content. Falling back to article list.\n\n" + article_text
+            print("  ⚠️ AI returned empty, using raw article list.")
+            return format_article_list(articles)
 
         return content
     except Exception as e:
-        return f"⚠️ AI summary failed: {e}\n\nFallback article list:\n\n{article_text}"
+        print(f"  ⚠️ AI failed: {e}")
+        return format_article_list(articles)
+
+
+def format_article_list(articles):
+    """Format articles as simple text: description + title + link."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    lines = [f"📡 今日新闻速递 | {today}", f"共 {len(articles)} 篇文章\n"]
+
+    for i, a in enumerate(articles, 1):
+        # 取 description 前两句作为简介
+        desc = a["description"][:150].strip()
+        if desc:
+            desc = desc + "..."
+        lines.append(f"{i}. {desc}")
+        lines.append(f"   {a['title']}")
+        lines.append(f"   {a['link']}")
+        lines.append("")
+
+    return "\n".join(lines)
 
 
 def push_telegram(text, config):
