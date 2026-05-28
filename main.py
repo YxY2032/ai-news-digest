@@ -97,17 +97,6 @@ def generate_summary(articles, config):
     if not api_key:
         return "⚠️ AI_API_KEY not configured. Skipping AI summary."
 
-    # ---- 调试信息 ----
-    masked_key = api_key[:8] + "..." + api_key[-4:] if len(api_key) > 12 else "***"
-    print(f"  [DEBUG] API Base: {api_base}")
-    print(f"  [DEBUG] Model:    {model}")
-    print(f"  [DEBUG] API Key:  {masked_key}")
-    print(f"  [DEBUG] Request URL: {api_base.rstrip('/')}/chat/completions")
-    print(f"  [DEBUG] ENV AI_API_BASE = {os.environ.get('AI_API_BASE', '(not set)')}")
-    print(f"  [DEBUG] ENV AI_MODEL = {os.environ.get('AI_MODEL', '(not set)')}")
-    print(f"  [DEBUG] CONFIG model = {ai_cfg.get('model', '(not set)')}")
-    # ---- 调试结束 ----
-
     client = OpenAI(api_key=api_key, base_url=api_base)
 
     article_text = "\n".join(
@@ -145,9 +134,16 @@ def generate_summary(articles, config):
             temperature=0.3,
             max_tokens=4096,
         )
-        return resp.choices[0].message.content
+        content = resp.choices[0].message.content
+        print(f"  [DEBUG] AI response length: {len(content) if content else 0} chars")
+        print(f"  [DEBUG] AI response preview: {(content or '(empty)')[:200]}")
+
+        if not content or not content.strip():
+            return "⚠️ AI returned empty content. Falling back to article list.\n\n" + article_text
+
+        return content
     except Exception as e:
-        return f"⚠️ AI summary failed: {e}\n\n共 {len(articles)} 篇文章待处理。"
+        return f"⚠️ AI summary failed: {e}\n\nFallback article list:\n\n{article_text}"
 
 
 def push_telegram(text, config):
@@ -161,10 +157,16 @@ def push_telegram(text, config):
         print("⚠️ TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not configured.")
         return False
 
+    if not text or not text.strip():
+        print("⚠️ Message text is empty, skipping Telegram push.")
+        return False
+
     api = f"https://api.telegram.org/bot{token}"
     chunks = _split_text(text, 4096)
 
     for i, chunk in enumerate(chunks, 1):
+        if not chunk.strip():
+            continue
         try:
             r = requests.post(
                 f"{api}/sendMessage",
