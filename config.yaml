@@ -53,5 +53,5 @@ telegram:
 
 # 全局设置
 settings:
-  fetch_hours: 24              # 抓取最近多少小时的文章
+  fetch_hours: 1               # 抓取最近多少小时的文章（配合15分钟轮询，1小时窗口防止漏抓）
   max_articles: 30             # 每次最多处理文章数
