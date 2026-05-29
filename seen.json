@@ -21,7 +21,22 @@
     "tag:github.com,2008:GHSA-fpwv-wv7c-h2mw": "2026-05-29T16:34:01.002690+00:00",
     "tag:github.com,2008:GHSA-mq5v-pxpm-8jw2": "2026-05-29T16:34:01.002690+00:00",
     "tag:github.com,2008:GHSA-gcv3-5v9q-fmhh": "2026-05-29T16:34:01.002690+00:00",
-    "tag:github.com,2008:GHSA-8xvp-7hj6-mcj9": "2026-05-29T16:34:01.002690+00:00"
+    "tag:github.com,2008:GHSA-8xvp-7hj6-mcj9": "2026-05-29T16:34:01.002690+00:00",
+    "tag:github.com,2008:GHSA-49pm-43hf-6xfq": "2026-05-29T18:50:08.248952+00:00",
+    "tag:github.com,2008:GHSA-hfc8-w5f4-3x6m": "2026-05-29T18:50:08.248952+00:00",
+    "tag:github.com,2008:GHSA-7cwm-fpfh-rrch": "2026-05-29T18:50:08.248952+00:00",
+    "https://www.bleepingcomputer.com/news/security/chatgpt-share-links-abused-to-host-fake-outage-pages-to-deliver-malware/": "2026-05-29T18:50:08.248952+00:00",
+    "tag:github.com,2008:GHSA-9g8x-92q2-p28f": "2026-05-29T18:50:08.248952+00:00",
+    "https://www.bleepingcomputer.com/news/security/california-ag-sues-23andme-over-2023-breach-exposing-health-data/": "2026-05-29T18:50:08.248952+00:00",
+    "tag:github.com,2008:GHSA-r9pm-gxmw-wv6p": "2026-05-29T18:50:08.248952+00:00",
+    "https://thehackernews.com/2026/05/chatgphish-vulnerability-turns-chatgpt.html": "2026-05-29T18:50:08.248952+00:00",
+    "tag:github.com,2008:GHSA-rp36-8xq3-r6c4": "2026-05-29T18:50:08.248952+00:00",
+    "tag:github.com,2008:GHSA-h64w-w9pr-82m4": "2026-05-29T18:50:08.248952+00:00",
+    "https://techcrunch.com/?post_type=tc_video&p=3127833": "2026-05-29T18:50:08.248952+00:00",
+    "tag:github.com,2008:GHSA-rr89-w3h9-m66j": "2026-05-29T18:50:08.248952+00:00",
+    "tag:github.com,2008:GHSA-6j2x-vhqr-qr7q": "2026-05-29T18:50:08.248952+00:00",
+    "tag:github.com,2008:GHSA-m4wx-m65x-ghrr": "2026-05-29T18:50:08.248952+00:00",
+    "tag:github.com,2008:GHSA-c4cf-2hgv-2qv6": "2026-05-29T18:50:08.248952+00:00"
   },
-  "updated": "2026-05-29T16:34:43.149478+00:00"
+  "updated": "2026-05-29T18:51:24.947992+00:00"
 }
