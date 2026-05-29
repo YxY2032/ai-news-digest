@@ -8,7 +8,7 @@
 # ============================================================
 feeds:
 
-  # ── 安全（8 个）────────────────────────────────────────────
+  # ── 安全（16 个）────────────────────────────────────────────
   - name: The Hacker News
     url: https://feeds.feedburner.com/TheHackersNews
     category: 安全
@@ -45,7 +45,39 @@ feeds:
   - name: "Twitter: @aleabitoreddit (RSSHub)"
     url: https://rsshub.app/twitter/user/aleabitoreddit
     category: 安全
-  # ── AI（6 个）──────────────────────────────────────────────
+  - name: "Cloudflare Blog"
+    url: https://blog.cloudflare.com/rss/
+    category: 安全
+
+  - name: CrowdStrike Blog
+    url: https://www.crowdstrike.com/blog/feed/
+    category: 安全
+
+  - name: Dark Reading
+    url: https://www.darkreading.com/rss.xml
+    category: 安全
+
+  - name: "PortSwigger Research"
+    url: https://portswigger.net/research/rss
+    category: 安全
+
+  - name: "Vectra AI Blog"
+    url: https://www.vectra.ai/blog/rss.xml
+    category: 安全
+
+  - name: "MSRC (Microsoft Security)"
+    url: https://rsshub.app/microsoft/msrc
+    category: 安全
+
+  - name: Google Security Blog
+    url: http://googleonlinesecurity.blogspot.com/atom.xml
+    category: 安全
+
+  - name: Google Project Zero
+    url: http://googleprojectzero.blogspot.com/feeds/posts/default
+    category: 安全
+
+  # ── AI（9 个）──────────────────────────────────────────────
   - name: MIT Technology Review
     url: https://www.technologyreview.com/feed/
     category: AI
@@ -70,7 +102,19 @@ feeds:
     url: https://garymarcus.substack.com/feed
     category: AI
 
-  # ── 科技资讯（3 个）────────────────────────────────────────
+  - name: "Anthropic Research"
+    url: https://rsshub.app/anthropic/research
+    category: AI
+
+  - name: "OpenAI Blog"
+    url: https://rsshub.app/openai/news
+    category: AI
+
+  - name: "Google AI Blog"
+    url: https://blog.research.google/feeds/posts/default
+    category: AI
+
+  # ── 科技资讯（4 个）────────────────────────────────────────
   - name: Ars Technica
     url: https://feeds.arstechnica.com/arstechnica/index
     category: 科技
@@ -81,6 +125,10 @@ feeds:
 
   - name: Daring Fireball (John Gruber)
     url: https://daringfireball.net/feeds/main
+    category: 科技
+
+  - name: "NVIDIA Developer Blog"
+    url: https://developer.nvidia.com/blog/feed/
     category: 科技
 
   # ── 技术博客（25 个）───────────────────────────────────────
