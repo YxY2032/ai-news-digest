@@ -15,7 +15,6 @@ from datetime import datetime, timedelta, timezone
 import feedparser
 import requests
 import yaml
-from openai import OpenAI
 
 
 def load_config(path="config.yaml"):
@@ -136,10 +135,8 @@ def generate_summary(articles, config):
 请输出今日（{today}）新闻摘要："""
 
     try:
-        client = OpenAI(api_key=api_key, base_url=api_base)
         print(f"  [DEBUG] Calling AI: base={api_base}, model={model}")
 
-        # 用 requests 直接调用，绕过 OpenAI SDK 可能的兼容问题
         url = f"{api_base.rstrip('/')}/chat/completions"
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -158,9 +155,7 @@ def generate_summary(articles, config):
             "max_tokens": 4096,
         }
 
-        print(f"  [DEBUG] Request URL: {url}")
         r = requests.post(url, headers=headers, json=payload, timeout=120)
-
         print(f"  [DEBUG] HTTP status: {r.status_code}")
 
         if r.status_code != 200:
@@ -168,31 +163,33 @@ def generate_summary(articles, config):
             return format_article_list(articles)
 
         data = r.json()
-        print(f"  [DEBUG] Response keys: {list(data.keys())}")
 
         # 从原始 JSON 中提取内容，兼容多种返回格式
         content = None
         if "choices" in data and len(data["choices"]) > 0:
             choice = data["choices"][0]
-            print(f"  [DEBUG] Choice keys: {list(choice.keys())}")
             msg = choice.get("message", {})
-            print(f"  [DEBUG] Message keys: {list(msg.keys()) if isinstance(msg, dict) else type(msg)}")
             content = msg.get("content") if isinstance(msg, dict) else str(msg)
             # 检查是否有 reasoning_content 等其他字段
             if not content:
-                for key in msg:
+                for key in msg if isinstance(msg, dict) else []:
                     val = msg[key]
                     if isinstance(val, str) and len(val) > 50:
-                        print(f"  [DEBUG] Found content in field '{key}': {val[:200]}")
                         content = val
                         break
 
-        print(f"  [DEBUG] Final content length: {len(content) if content else 0} chars")
-        print(f"  [DEBUG] Content preview: {(content or '(empty)')[:300]}")
+        # 检查 finish_reason，如果是 length 说明被截断了
+        finish_reason = data.get("choices", [{}])[0].get("finish_reason", "")
+        print(f"  [DEBUG] finish_reason: {finish_reason}")
+        print(f"  [DEBUG] Content length: {len(content) if content else 0} chars")
 
         if not content or not content.strip():
             print("  ⚠️ AI returned empty, using fallback.")
             return format_article_list(articles)
+
+        # 如果被截断，补一个提示
+        if finish_reason == "length":
+            content += "\n\n⚠️ (内容因长度限制被截断，完整内容请查看源站)"
 
         return content
     except Exception as e:
@@ -218,7 +215,7 @@ def format_article_list(articles):
 
 
 def push_telegram(text, config):
-    """Push message to Telegram, auto-splitting if needed."""
+    """Push message to Telegram, auto-splitting at article boundaries."""
     tg_cfg = config.get("telegram", {})
 
     token = os.environ.get("TELEGRAM_BOT_TOKEN", tg_cfg.get("bot_token", ""))
@@ -233,7 +230,45 @@ def push_telegram(text, config):
         return False
 
     api = f"https://api.telegram.org/bot{token}"
-    chunks = _split_text(text, 4096)
+
+    # 按文章块分片：先按双换行分割文章，再组装成 ≤3800 字符的消息块
+    # 3800 留余量避免特殊字符导致超限
+    MAX_LEN = 3800
+
+    blocks = re.split(r'\n\n(?=📰)', text)
+    chunks = []
+    current = ""
+
+    for block in blocks:
+        block = block.strip()
+        if not block:
+            continue
+        # 如果单个块就超限，强制按字符切
+        if len(block) > MAX_LEN:
+            if current:
+                chunks.append(current)
+                current = ""
+            # 按行切分超长块
+            sub = ""
+            for line in block.split("\n"):
+                if len(sub) + len(line) + 1 > MAX_LEN:
+                    if sub:
+                        chunks.append(sub)
+                    sub = line
+                else:
+                    sub = sub + "\n" + line if sub else line
+            if sub:
+                current = sub
+        elif len(current) + len(block) + 2 > MAX_LEN:
+            chunks.append(current)
+            current = block
+        else:
+            current = current + "\n\n" + block if current else block
+
+    if current:
+        chunks.append(current)
+
+    print(f"  Split into {len(chunks)} chunks")
 
     for i, chunk in enumerate(chunks, 1):
         if not chunk.strip():
@@ -243,7 +278,7 @@ def push_telegram(text, config):
                 f"{api}/sendMessage",
                 json={
                     "chat_id": chat_id,
-                    "text": chunk,
+                    "text": chunk.strip(),
                     "disable_web_page_preview": True,
                 },
                 timeout=30,
@@ -256,25 +291,6 @@ def push_telegram(text, config):
             print(f"  ⚠️ Push failed [{i}/{len(chunks)}]: {e}")
 
     return True
-
-
-def _split_text(text, limit):
-    """Split text at paragraph boundaries."""
-    if len(text) <= limit:
-        return [text]
-    parts = []
-    while text:
-        if len(text) <= limit:
-            parts.append(text)
-            break
-        cut = text.rfind("\n\n", 0, limit)
-        if cut == -1:
-            cut = text.rfind("\n", 0, limit)
-        if cut == -1:
-            cut = limit
-        parts.append(text[:cut])
-        text = text[cut:].lstrip("\n")
-    return parts
 
 
 def main():
