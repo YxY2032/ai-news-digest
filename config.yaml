@@ -8,7 +8,7 @@
 # ============================================================
 feeds:
 
-  # ── 安全（16 个）────────────────────────────────────────────
+  # ── 安全（17 个）────────────────────────────────────────────
   - name: The Hacker News
     url: https://feeds.feedburner.com/TheHackersNews
     category: 安全
@@ -75,6 +75,10 @@ feeds:
 
   - name: Google Project Zero
     url: http://googleprojectzero.blogspot.com/feeds/posts/default
+    category: 安全
+
+  - name: "GitHub Security Advisories"
+    url: https://github.com/security-advisories.atom
     category: 安全
 
   # ── AI（9 个）──────────────────────────────────────────────
