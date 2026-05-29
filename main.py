@@ -84,6 +84,42 @@ def _strip_html(text):
     return re.sub(r"<[^>]+>", "", text).strip()
 
 
+def _clean_truncated_content(content):
+    """Clean up AI output that was truncated mid-character or mid-article."""
+    if not content:
+        return content, False
+
+    # 1. Remove Unicode replacement character (broken UTF-8 sequences)
+    content = content.replace("\ufffd", "")
+
+    # 2. Remove trailing whitespace
+    content = content.strip()
+
+    # 3. Remove incomplete trailing article block (no link after title)
+    # Split by article separator 【\d+】
+    blocks = re.split(r"\n(?=【\d+】)", content)
+    if not blocks:
+        return content, False
+
+    cleaned_blocks = []
+    was_truncated = False
+
+    for block in blocks:
+        # An article block is considered complete if it contains a URL
+        has_link = bool(re.search(r"https?://\S+", block))
+        has_title = bool(re.search(r"📰", block))
+
+        if has_link:
+            cleaned_blocks.append(block)
+        elif has_title and not was_truncated:
+            # First incomplete article — mark as truncated and stop
+            was_truncated = True
+        # If no title and no link, skip entirely (garbage)
+
+    result = "\n\n".join(cleaned_blocks).strip()
+    return result, was_truncated
+
+
 def generate_summary(articles, config):
     """Use AI to generate a structured daily digest."""
     ai_cfg = config.get("ai", {})
@@ -100,33 +136,51 @@ def generate_summary(articles, config):
 
     # 构建文章列表供 AI 处理
     article_list = "\n\n".join(
-        f"[{i+1}] 原始标题: {a['title']}\n"
+        f"文章{idx+1}:\n"
+        f"标题: {a['title']}\n"
         f"来源: {a['source']} | 分类: {a['category']}\n"
-        f"内容摘要: {a['description'][:300]}\n"
+        f"内容: {a['description'][:300]}\n"
         f"链接: {a['link']}"
-        for i, a in enumerate(articles)
+        for idx, a in enumerate(articles)
     )
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     prompt = f"""你是专业的安全/科技新闻分析师。以下是今日 {len(articles)} 篇 RSS 新闻文章。
 
-请严格按以下格式输出每篇文章的信息，每篇文章之间用一个空行分隔：
+请严格按以下格式输出每篇文章的信息。使用【序号】分隔每篇文章，共 {len(articles)} 篇。
 
-📰 原始英文标题
+—— 格式示例（必须严格照搬）——
+
+【1】
+📰 Original English Title Here
 📰 中文标题翻译
-📝 约50字的中文摘要，要求精准到位、全面概括文章核心内容
-🔗 链接
+📝 约50字的中文摘要，精准到位、全面概括文章核心内容
+🔗 https://example.com/article
 
-关键要求：
-1. 标题必须保留原始语言（英文），并在下一行提供中文翻译
-2. 摘要用中文，控制在50字左右，要到位且全面
-3. 不要遗漏任何文章，共 {len(articles)} 篇
-4. 不要加额外分类或总结，只输出上述格式
+【2】
+📰 Another English Title
+📰 下一篇中文标题翻译
+📝 下一篇约50字的中文摘要
+🔗 https://example.com/article2
+
+—— 严格禁止 ——
+❌ 禁止使用 * ** # - 等任何 Markdown 语法
+❌ 禁止使用 bullet 符号或列表标记
+❌ 禁止在每行开头加 - 或 • 或 *
+❌ 禁止使用粗体或斜体
+❌ 禁止添加额外的分类标题或总结段落
+
+—— 关键要求 ——
+✅ 标题保留原始语言（英文），下一行提供中文翻译，两行都以 📰 开头
+✅ 摘要用中文，50字左右，到位且全面
+✅ 不要遗漏任何文章，共 {len(articles)} 篇
+✅ 纯文本输出，绝对不使用 Markdown
+✅ 每篇文章严格使用【序号】分隔
 
 ---
 
-文章列表：
+以下是文章列表：
 
 {article_list}
 
@@ -147,12 +201,12 @@ def generate_summary(articles, config):
             "messages": [
                 {
                     "role": "system",
-                    "content": "你是专业新闻分析师。输出严格按用户指定格式，每篇文章包含双语标题、50字中文摘要和链接。",
+                    "content": "你是专业新闻分析师。输出严格按用户指定格式：使用【序号】分隔文章，每篇含 📰 双语标题、📝 50字中文摘要和 🔗 链接。绝对禁止使用任何 Markdown 格式（* ** # - 等），纯文本输出。",
                 },
                 {"role": "user", "content": prompt},
             ],
             "temperature": 0.3,
-            "max_tokens": 4096,
+            "max_tokens": 8192,
         }
 
         r = requests.post(url, headers=headers, json=payload, timeout=120)
@@ -187,9 +241,11 @@ def generate_summary(articles, config):
             print("  ⚠️ AI returned empty, using fallback.")
             return format_article_list(articles)
 
-        # 如果被截断，补一个提示
-        if finish_reason == "length":
-            content += "\n\n⚠️ (内容因长度限制被截断，完整内容请查看源站)"
+        # 清理截断内容：去除乱码和不完整的文章块
+        content, was_truncated = _clean_truncated_content(content)
+
+        if was_truncated or finish_reason == "length":
+            content += "\n\n⚠️ 部分文章因长度限制被截断，完整内容请查看源站链接"
 
         return content
     except Exception as e:
@@ -198,14 +254,20 @@ def generate_summary(articles, config):
 
 
 def format_article_list(articles):
-    """Fallback: format articles with bilingual title + Chinese description + link."""
+    """Fallback: format articles with clean emoji separators and no markdown."""
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    lines = [f"📡 今日新闻速递 | {today}", f"共 {len(articles)} 篇文章", ""]
+    lines = [
+        f"📡 今日新闻速递 | {today}",
+        f"共 {len(articles)} 篇文章",
+        "",
+    ]
 
-    for i, a in enumerate(articles, 1):
+    for idx, a in enumerate(articles, 1):
         desc = a["description"][:150].strip()
         if desc:
             desc = desc + "..."
+
+        lines.append(f"【{idx}】")
         lines.append(f"📰 {a['title']}")
         lines.append(f"📝 {desc}")
         lines.append(f"🔗 {a['link']}")
@@ -235,7 +297,8 @@ def push_telegram(text, config):
     # 3800 留余量避免特殊字符导致超限
     MAX_LEN = 3800
 
-    blocks = re.split(r'\n\n(?=📰)', text)
+    # Split by article blocks using 【digit+】separator
+    blocks = re.split(r"\n\n(?=【\d+】)", text)
     chunks = []
     current = ""
 
