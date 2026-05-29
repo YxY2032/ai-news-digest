@@ -9,13 +9,23 @@ jobs:
   digest:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
+
+      - name: Restore seen.json from cache
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: seen.json
+          key: seen-json-${{ github.run_id }}
+          restore-keys: seen-json-
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
+
       - run: pip install -r requirements.txt
       - run: python main.py
         env:
@@ -24,12 +34,9 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
-      - name: Commit updated seen.json
-        if: success()
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add seen.json
-          git diff --staged --quiet || git commit -m "chore: update seen.json [skip ci]"
-          git pull --rebase origin main
-          git push
+      - name: Save seen.json to cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: seen.json
+          key: seen-json-${{ github.run_id }}
