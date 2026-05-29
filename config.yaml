@@ -42,7 +42,7 @@ feeds:
     category: 安全
 
 
-  - name: Twitter: @aleabitoreddit (RSSHub)
+  - name: "Twitter: @aleabitoreddit (RSSHub)"
     url: https://rsshub.app/twitter/user/aleabitoreddit
     category: 安全
   # ── AI（6 个）──────────────────────────────────────────────
