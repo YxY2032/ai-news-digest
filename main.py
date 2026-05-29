@@ -2,7 +2,8 @@
 """
 AI News Digest - RSS → AI Summary → Telegram Push
 
-Daily automated news aggregation powered by GitHub Actions.
+Continuous monitoring powered by GitHub Actions.
+Runs every 15 minutes, only pushes new articles (GUID-based dedup).
 """
 
 import hashlib
@@ -16,10 +17,42 @@ import feedparser
 import requests
 import yaml
 
+SEEN_FILE = "seen.json"
+
 
 def load_config(path="config.yaml"):
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
+
+
+def load_seen(path=SEEN_FILE):
+    """Load previously processed article GUIDs from disk."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, dict) and "ids" in data:
+                return data
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    return {"ids": {}, "updated": ""}
+
+
+def save_seen(seen, path=SEEN_FILE):
+    """Save processed article GUIDs to disk."""
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(seen, f, indent=2, ensure_ascii=False)
+
+
+def cleanup_seen(seen, max_age_days=7):
+    """Remove entries older than max_age_days to keep file small."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).isoformat()
+    seen["ids"] = {
+        guid: ts
+        for guid, ts in seen["ids"].items()
+        if ts > cutoff
+    }
+    seen["updated"] = datetime.now(timezone.utc).isoformat()
+    return seen
 
 
 def fetch_rss(feeds, hours=24, max_articles=30):
@@ -39,8 +72,15 @@ def fetch_rss(feeds, hours=24, max_articles=30):
             for entry in feed.entries:
                 pub_time = _parse_entry_time(entry)
                 if pub_time and pub_time > cutoff:
+                    # Prefer RSS <guid> or <id>, fallback to link, fallback to title hash
+                    guid = entry.get("id") or entry.get("guid") or entry.get("link", "")
+                    if not guid:
+                        guid = hashlib.md5(
+                            entry.get("title", "").encode()
+                        ).hexdigest()
                     articles.append(
                         {
+                            "guid": guid,
                             "title": entry.get("title", "").strip(),
                             "link": entry.get("link", ""),
                             "description": _strip_html(
@@ -56,13 +96,12 @@ def fetch_rss(feeds, hours=24, max_articles=30):
         except Exception as e:
             print(f"  ⚠️  Failed to fetch {feed_cfg['url']}: {e}")
 
-    # Deduplicate by title hash
+    # Deduplicate by GUID (in-memory, within this run)
     seen = set()
     unique = []
     for a in articles:
-        key = hashlib.md5(a["title"].encode()).hexdigest()
-        if key not in seen:
-            seen.add(key)
+        if a["guid"] not in seen:
+            seen.add(a["guid"])
             unique.append(a)
 
     unique.sort(key=lambda x: x["published"], reverse=True)
@@ -89,14 +128,9 @@ def _clean_truncated_content(content):
     if not content:
         return content, False
 
-    # 1. Remove Unicode replacement character (broken UTF-8 sequences)
     content = content.replace("\ufffd", "")
-
-    # 2. Remove trailing whitespace
     content = content.strip()
 
-    # 3. Remove incomplete trailing article block (no link after title)
-    # Split by article separator 【\d+】
     blocks = re.split(r"\n(?=【\d+】)", content)
     if not blocks:
         return content, False
@@ -105,30 +139,20 @@ def _clean_truncated_content(content):
     was_truncated = False
 
     for block in blocks:
-        # An article block is considered complete if it contains a URL
         has_link = bool(re.search(r"https?://\S+", block))
         has_title = bool(re.search(r"📰", block))
 
         if has_link:
             cleaned_blocks.append(block)
         elif has_title and not was_truncated:
-            # First incomplete article — mark as truncated and stop
             was_truncated = True
-        # If no title and no link, skip entirely (garbage)
 
     result = "\n\n".join(cleaned_blocks).strip()
     return result, was_truncated
 
 
 def _call_ai_api(api_base, api_key, model, system_prompt, user_prompt, read_timeout=300):
-    """Call OpenAI-compatible chat completions API with timeout.
-
-    Args:
-        read_timeout: seconds to wait for response (connect timeout is fixed at 30s).
-                      Default 300s accounts for 30-article processing by GLM-5.1.
-    Returns:
-        (content, finish_reason) tuple, or raises on error.
-    """
+    """Call OpenAI-compatible chat completions API with timeout."""
     url = f"{api_base.rstrip('/')}/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -144,8 +168,6 @@ def _call_ai_api(api_base, api_key, model, system_prompt, user_prompt, read_time
         "max_tokens": 8192,
     }
 
-    # Tuple timeout: (connect_timeout, read_timeout)
-    # connect=30s covers slow DNS/TLS; read=300s covers model generation time
     r = requests.post(url, headers=headers, json=payload, timeout=(30, read_timeout))
     print(f"  [DEBUG] HTTP status: {r.status_code}")
 
@@ -159,7 +181,6 @@ def _call_ai_api(api_base, api_key, model, system_prompt, user_prompt, read_time
         choice = data["choices"][0]
         msg = choice.get("message", {})
         content = msg.get("content") if isinstance(msg, dict) else str(msg)
-        # Check for reasoning_content or other fields
         if not content:
             for key in msg if isinstance(msg, dict) else []:
                 val = msg[key]
@@ -188,7 +209,6 @@ def generate_summary(articles, config):
         print("  ⚠️ AI_API_KEY not set, using raw article list.")
         return format_article_list(articles)
 
-    # Build article data once, reuse for both attempts
     article_list = "\n\n".join(
         f"文章{idx+1}:\n"
         f"标题: {a['title']}\n"
@@ -206,7 +226,7 @@ def generate_summary(articles, config):
         "绝对禁止使用任何 Markdown 格式（* ** # - 等），纯文本输出。"
     )
 
-    # ── 第一次尝试：完整 prompt（含格式示例和禁止规则）──────────────
+    # ── 第一次尝试：完整 prompt ──
     full_prompt = f"""你是专业的安全/科技新闻分析师。以下是今日 {len(articles)} 篇 RSS 新闻文章。
 
 请严格按以下格式输出每篇文章的信息。使用【序号】分隔每篇文章，共 {len(articles)} 篇。
@@ -249,7 +269,7 @@ def generate_summary(articles, config):
 
 请输出今日（{today}）新闻摘要："""
 
-    # ── 第二次尝试：精简 prompt（去掉格式示例和冗长规则，减轻模型负担）──────
+    # ── 第二次尝试：精简 prompt ──
     simple_prompt = f"""你是专业新闻分析师。以下是 {len(articles)} 篇 RSS 文章。
 
 请为每篇文章按以下格式输出（共 {len(articles)} 篇）：
@@ -266,7 +286,6 @@ def generate_summary(articles, config):
 
 {article_list}"""
 
-    # ── 尝试调用 AI ──
     for attempt in (1, 2):
         prompt = full_prompt if attempt == 1 else simple_prompt
         label = "full" if attempt == 1 else "simplified"
@@ -286,7 +305,6 @@ def generate_summary(articles, config):
                     continue
                 return format_article_list(articles)
 
-            # Clean up truncation
             content, was_truncated = _clean_truncated_content(content)
             if was_truncated or finish_reason == "length":
                 content += "\n\n⚠️ 部分文章因长度限制被截断，完整内容请查看源站链接"
@@ -298,15 +316,12 @@ def generate_summary(articles, config):
             print(f"  ⚠️ Attempt {attempt} failed: {error_type}: {e}")
 
             if attempt == 1:
-                # Timeout → retry with shorter prompt; other errors also worth retrying
                 print("  Retrying with simplified prompt...")
                 continue
             else:
-                # Both attempts failed
                 print(f"  ⚠️ Both attempts failed, using fallback list.")
                 return format_article_list(articles)
 
-    # Should never reach here, but just in case
     return format_article_list(articles)
 
 
@@ -350,11 +365,8 @@ def push_telegram(text, config):
 
     api = f"https://api.telegram.org/bot{token}"
 
-    # 按文章块分片：先按双换行分割文章，再组装成 ≤3800 字符的消息块
-    # 3800 留余量避免特殊字符导致超限
     MAX_LEN = 3800
 
-    # Split by article blocks using 【digit+】separator
     blocks = re.split(r"\n\n(?=【\d+】)", text)
     chunks = []
     current = ""
@@ -363,12 +375,10 @@ def push_telegram(text, config):
         block = block.strip()
         if not block:
             continue
-        # 如果单个块就超限，强制按字符切
         if len(block) > MAX_LEN:
             if current:
                 chunks.append(current)
                 current = ""
-            # 按行切分超长块
             sub = ""
             for line in block.split("\n"):
                 if len(sub) + len(line) + 1 > MAX_LEN:
@@ -422,27 +432,53 @@ def main():
 
     config = load_config()
     settings = config.get("settings", {})
-    hours = settings.get("fetch_hours", 24)
-    max_articles = settings.get("max_articles", 30)
+    hours = int(os.environ.get("FETCH_HOURS", settings.get("fetch_hours", 1)))
+    max_articles = int(os.environ.get("MAX_ARTICLES", settings.get("max_articles", 30)))
 
-    # 1. Fetch RSS
+    # 1. Load seen GUIDs from previous runs
+    seen = load_seen()
+    print(f"\n📚 Loaded {len(seen['ids'])} previously seen articles.")
+
+    # 2. Fetch RSS
     print(f"\n📡 Fetching RSS feeds (last {hours}h)...")
     articles = fetch_rss(
         config.get("feeds", []), hours=hours, max_articles=max_articles
     )
-    print(f"   → {len(articles)} articles found")
+    print(f"   → {len(articles)} articles found in time window")
 
     if not articles:
-        print("\n⚠️  No new articles. Exiting.")
+        print("\n⚠️  No articles in time window. Exiting.")
         return
 
-    # 2. AI Summary
-    print("\n🤖 Generating AI summary...")
-    summary = generate_summary(articles, config)
+    # 3. Filter out already-seen articles (cross-run dedup)
+    new_articles = []
+    skipped = 0
+    now_ts = datetime.now(timezone.utc).isoformat()
+    for a in articles:
+        if a["guid"] in seen["ids"]:
+            skipped += 1
+        else:
+            new_articles.append(a)
+            seen["ids"][a["guid"]] = now_ts
 
-    # 3. Push Telegram
+    print(f"   → {len(new_articles)} new / {skipped} already seen")
+
+    if not new_articles:
+        print("\n✅ No new articles since last check. Exiting.")
+        return
+
+    # 4. AI Summary (only for new articles)
+    print(f"\n🤖 Generating AI summary for {len(new_articles)} new articles...")
+    summary = generate_summary(new_articles, config)
+
+    # 5. Push Telegram
     print("\n📨 Pushing to Telegram...")
     push_telegram(summary, config)
+
+    # 6. Cleanup old entries and save seen.json
+    seen = cleanup_seen(seen, max_age_days=7)
+    save_seen(seen)
+    print(f"\n💾 Saved {len(seen['ids'])} entries to {SEEN_FILE} (expired entries cleaned)")
 
     print("\n" + "=" * 50)
     print("✅ Done!")
