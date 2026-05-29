@@ -100,10 +100,9 @@ def generate_summary(articles, config):
 
     # 构建文章列表供 AI 处理
     article_list = "\n\n".join(
-        f"[{i+1}] 标题: {a['title']}\n"
-        f"来源: {a['source']}\n"
-        f"分类: {a['category']}\n"
-        f"摘要: {a['description'][:300]}\n"
+        f"[{i+1}] 原始标题: {a['title']}\n"
+        f"来源: {a['source']} | 分类: {a['category']}\n"
+        f"内容摘要: {a['description'][:300]}\n"
         f"链接: {a['link']}"
         for i, a in enumerate(articles)
     )
@@ -112,14 +111,18 @@ def generate_summary(articles, config):
 
     prompt = f"""你是专业的安全/科技新闻分析师。以下是今日 {len(articles)} 篇 RSS 新闻文章。
 
-请为每篇文章生成一段简短的中文介绍（1-2句话概括核心内容），然后附上文章标题和链接。
+请严格按以下格式输出每篇文章的信息，每篇文章之间用一个空行分隔：
 
-输出格式（严格按此格式，每篇文章之间空一行）：
+📰 原始英文标题
+📰 中文标题翻译
+📝 约50字的中文摘要，要求精准到位、全面概括文章核心内容
+🔗 链接
 
-📰 文章标题
-一句话中文摘要介绍这篇文章的核心内容。
-🔗 标题
-链接
+关键要求：
+1. 标题必须保留原始语言（英文），并在下一行提供中文翻译
+2. 摘要用中文，控制在50字左右，要到位且全面
+3. 不要遗漏任何文章，共 {len(articles)} 篇
+4. 不要加额外分类或总结，只输出上述格式
 
 ---
 
@@ -129,7 +132,7 @@ def generate_summary(articles, config):
 
 ---
 
-请生成今日（{today}）新闻摘要，共 {len(articles)} 篇："""
+请输出今日（{today}）新闻摘要："""
 
     try:
         client = OpenAI(api_key=api_key, base_url=api_base)
@@ -138,7 +141,7 @@ def generate_summary(articles, config):
             messages=[
                 {
                     "role": "system",
-                    "content": "你是专业新闻分析师，用简洁的中文概括每篇文章的核心内容。输出格式严格按要求。",
+                    "content": "你是专业新闻分析师。输出严格按用户指定格式，每篇文章包含双语标题、50字中文摘要和链接。",
                 },
                 {"role": "user", "content": prompt},
             ],
@@ -159,18 +162,17 @@ def generate_summary(articles, config):
 
 
 def format_article_list(articles):
-    """Format articles as simple text: description + title + link."""
+    """Fallback: format articles with bilingual title and link."""
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    lines = [f"📡 今日新闻速递 | {today}", f"共 {len(articles)} 篇文章\n"]
+    lines = [f"📡 今日新闻速递 | {today}", f"共 {len(articles)} 篇文章", ""]
 
     for i, a in enumerate(articles, 1):
-        # 取 description 前两句作为简介
-        desc = a["description"][:150].strip()
+        desc = a["description"][:100].strip()
         if desc:
             desc = desc + "..."
-        lines.append(f"{i}. {desc}")
-        lines.append(f"   {a['title']}")
-        lines.append(f"   {a['link']}")
+        lines.append(f"📰 {a['title']}")
+        lines.append(f"📝 {desc}")
+        lines.append(f"🔗 {a['link']}")
         lines.append("")
 
     return "\n".join(lines)
