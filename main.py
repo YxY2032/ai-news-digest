@@ -120,8 +120,62 @@ def _clean_truncated_content(content):
     return result, was_truncated
 
 
+def _call_ai_api(api_base, api_key, model, system_prompt, user_prompt, read_timeout=300):
+    """Call OpenAI-compatible chat completions API with timeout.
+
+    Args:
+        read_timeout: seconds to wait for response (connect timeout is fixed at 30s).
+                      Default 300s accounts for 30-article processing by GLM-5.1.
+    Returns:
+        (content, finish_reason) tuple, or raises on error.
+    """
+    url = f"{api_base.rstrip('/')}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.3,
+        "max_tokens": 8192,
+    }
+
+    # Tuple timeout: (connect_timeout, read_timeout)
+    # connect=30s covers slow DNS/TLS; read=300s covers model generation time
+    r = requests.post(url, headers=headers, json=payload, timeout=(30, read_timeout))
+    print(f"  [DEBUG] HTTP status: {r.status_code}")
+
+    if r.status_code != 200:
+        raise RuntimeError(f"API returned {r.status_code}: {r.text[:500]}")
+
+    data = r.json()
+
+    content = None
+    if "choices" in data and len(data["choices"]) > 0:
+        choice = data["choices"][0]
+        msg = choice.get("message", {})
+        content = msg.get("content") if isinstance(msg, dict) else str(msg)
+        # Check for reasoning_content or other fields
+        if not content:
+            for key in msg if isinstance(msg, dict) else []:
+                val = msg[key]
+                if isinstance(val, str) and len(val) > 50:
+                    content = val
+                    break
+
+    finish_reason = data.get("choices", [{}])[0].get("finish_reason", "")
+    print(f"  [DEBUG] finish_reason: {finish_reason}")
+    print(f"  [DEBUG] Content length: {len(content) if content else 0} chars")
+
+    return content, finish_reason
+
+
 def generate_summary(articles, config):
-    """Use AI to generate a structured daily digest."""
+    """Use AI to generate a structured daily digest with retry on timeout."""
     ai_cfg = config.get("ai", {})
 
     api_key = os.environ.get("AI_API_KEY", ai_cfg.get("api_key", ""))
@@ -134,7 +188,7 @@ def generate_summary(articles, config):
         print("  ⚠️ AI_API_KEY not set, using raw article list.")
         return format_article_list(articles)
 
-    # 构建文章列表供 AI 处理
+    # Build article data once, reuse for both attempts
     article_list = "\n\n".join(
         f"文章{idx+1}:\n"
         f"标题: {a['title']}\n"
@@ -146,7 +200,14 @@ def generate_summary(articles, config):
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    prompt = f"""你是专业的安全/科技新闻分析师。以下是今日 {len(articles)} 篇 RSS 新闻文章。
+    system_prompt = (
+        "你是专业新闻分析师。输出严格按用户指定格式："
+        "使用【序号】分隔文章，每篇含 📰 双语标题、📝 50字中文摘要和 🔗 链接。"
+        "绝对禁止使用任何 Markdown 格式（* ** # - 等），纯文本输出。"
+    )
+
+    # ── 第一次尝试：完整 prompt（含格式示例和禁止规则）──────────────
+    full_prompt = f"""你是专业的安全/科技新闻分析师。以下是今日 {len(articles)} 篇 RSS 新闻文章。
 
 请严格按以下格式输出每篇文章的信息。使用【序号】分隔每篇文章，共 {len(articles)} 篇。
 
@@ -188,69 +249,65 @@ def generate_summary(articles, config):
 
 请输出今日（{today}）新闻摘要："""
 
-    try:
-        print(f"  [DEBUG] Calling AI: base={api_base}, model={model}")
+    # ── 第二次尝试：精简 prompt（去掉格式示例和冗长规则，减轻模型负担）──────
+    simple_prompt = f"""你是专业新闻分析师。以下是 {len(articles)} 篇 RSS 文章。
 
-        url = f"{api_base.rstrip('/')}/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "你是专业新闻分析师。输出严格按用户指定格式：使用【序号】分隔文章，每篇含 📰 双语标题、📝 50字中文摘要和 🔗 链接。绝对禁止使用任何 Markdown 格式（* ** # - 等），纯文本输出。",
-                },
-                {"role": "user", "content": prompt},
-            ],
-            "temperature": 0.3,
-            "max_tokens": 8192,
-        }
+请为每篇文章按以下格式输出（共 {len(articles)} 篇）：
 
-        r = requests.post(url, headers=headers, json=payload, timeout=120)
-        print(f"  [DEBUG] HTTP status: {r.status_code}")
+【序号】
+📰 原始英文标题
+📰 中文标题翻译
+📝 约50字中文摘要
+🔗 文章链接
 
-        if r.status_code != 200:
-            print(f"  ⚠️ AI API error: {r.status_code} - {r.text[:500]}")
-            return format_article_list(articles)
+禁止使用 * ** # - 等 Markdown 符号。纯文本输出。
 
-        data = r.json()
+文章列表：
 
-        # 从原始 JSON 中提取内容，兼容多种返回格式
-        content = None
-        if "choices" in data and len(data["choices"]) > 0:
-            choice = data["choices"][0]
-            msg = choice.get("message", {})
-            content = msg.get("content") if isinstance(msg, dict) else str(msg)
-            # 检查是否有 reasoning_content 等其他字段
-            if not content:
-                for key in msg if isinstance(msg, dict) else []:
-                    val = msg[key]
-                    if isinstance(val, str) and len(val) > 50:
-                        content = val
-                        break
+{article_list}"""
 
-        # 检查 finish_reason，如果是 length 说明被截断了
-        finish_reason = data.get("choices", [{}])[0].get("finish_reason", "")
-        print(f"  [DEBUG] finish_reason: {finish_reason}")
-        print(f"  [DEBUG] Content length: {len(content) if content else 0} chars")
+    # ── 尝试调用 AI ──
+    for attempt in (1, 2):
+        prompt = full_prompt if attempt == 1 else simple_prompt
+        label = "full" if attempt == 1 else "simplified"
+        print(f"  [DEBUG] Attempt {attempt}/2 ({label} prompt)")
 
-        if not content or not content.strip():
-            print("  ⚠️ AI returned empty, using fallback.")
-            return format_article_list(articles)
+        try:
+            content, finish_reason = _call_ai_api(
+                api_base, api_key, model,
+                system_prompt, prompt,
+                read_timeout=300,
+            )
 
-        # 清理截断内容：去除乱码和不完整的文章块
-        content, was_truncated = _clean_truncated_content(content)
+            if not content or not content.strip():
+                print(f"  ⚠️ AI returned empty on attempt {attempt}.")
+                if attempt == 1:
+                    print("  Retrying with simplified prompt...")
+                    continue
+                return format_article_list(articles)
 
-        if was_truncated or finish_reason == "length":
-            content += "\n\n⚠️ 部分文章因长度限制被截断，完整内容请查看源站链接"
+            # Clean up truncation
+            content, was_truncated = _clean_truncated_content(content)
+            if was_truncated or finish_reason == "length":
+                content += "\n\n⚠️ 部分文章因长度限制被截断，完整内容请查看源站链接"
 
-        return content
-    except Exception as e:
-        print(f"  ⚠️ AI failed: {type(e).__name__}: {e}")
-        return format_article_list(articles)
+            return content
+
+        except Exception as e:
+            error_type = type(e).__name__
+            print(f"  ⚠️ Attempt {attempt} failed: {error_type}: {e}")
+
+            if attempt == 1:
+                # Timeout → retry with shorter prompt; other errors also worth retrying
+                print("  Retrying with simplified prompt...")
+                continue
+            else:
+                # Both attempts failed
+                print(f"  ⚠️ Both attempts failed, using fallback list.")
+                return format_article_list(articles)
+
+    # Should never reach here, but just in case
+    return format_article_list(articles)
 
 
 def format_article_list(articles):
