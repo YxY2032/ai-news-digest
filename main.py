@@ -6,6 +6,7 @@ Daily automated news aggregation powered by GitHub Actions.
 """
 
 import hashlib
+import json
 import os
 import re
 import sys
@@ -137,21 +138,57 @@ def generate_summary(articles, config):
     try:
         client = OpenAI(api_key=api_key, base_url=api_base)
         print(f"  [DEBUG] Calling AI: base={api_base}, model={model}")
-        resp = client.chat.completions.create(
-            model=model,
-            messages=[
+
+        # 用 requests 直接调用，绕过 OpenAI SDK 可能的兼容问题
+        url = f"{api_base.rstrip('/')}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": model,
+            "messages": [
                 {
                     "role": "system",
                     "content": "你是专业新闻分析师。输出严格按用户指定格式，每篇文章包含双语标题、50字中文摘要和链接。",
                 },
                 {"role": "user", "content": prompt},
             ],
-            temperature=0.3,
-            max_tokens=4096,
-        )
-        content = resp.choices[0].message.content
-        print(f"  [DEBUG] AI response length: {len(content) if content else 0} chars")
-        print(f"  [DEBUG] AI response first 300 chars: {(content or '(empty)')[:300]}")
+            "temperature": 0.3,
+            "max_tokens": 4096,
+        }
+
+        print(f"  [DEBUG] Request URL: {url}")
+        r = requests.post(url, headers=headers, json=payload, timeout=120)
+
+        print(f"  [DEBUG] HTTP status: {r.status_code}")
+
+        if r.status_code != 200:
+            print(f"  ⚠️ AI API error: {r.status_code} - {r.text[:500]}")
+            return format_article_list(articles)
+
+        data = r.json()
+        print(f"  [DEBUG] Response keys: {list(data.keys())}")
+
+        # 从原始 JSON 中提取内容，兼容多种返回格式
+        content = None
+        if "choices" in data and len(data["choices"]) > 0:
+            choice = data["choices"][0]
+            print(f"  [DEBUG] Choice keys: {list(choice.keys())}")
+            msg = choice.get("message", {})
+            print(f"  [DEBUG] Message keys: {list(msg.keys()) if isinstance(msg, dict) else type(msg)}")
+            content = msg.get("content") if isinstance(msg, dict) else str(msg)
+            # 检查是否有 reasoning_content 等其他字段
+            if not content:
+                for key in msg:
+                    val = msg[key]
+                    if isinstance(val, str) and len(val) > 50:
+                        print(f"  [DEBUG] Found content in field '{key}': {val[:200]}")
+                        content = val
+                        break
+
+        print(f"  [DEBUG] Final content length: {len(content) if content else 0} chars")
+        print(f"  [DEBUG] Content preview: {(content or '(empty)')[:300]}")
 
         if not content or not content.strip():
             print("  ⚠️ AI returned empty, using fallback.")
@@ -160,7 +197,6 @@ def generate_summary(articles, config):
         return content
     except Exception as e:
         print(f"  ⚠️ AI failed: {type(e).__name__}: {e}")
-        print(f"  [DEBUG] Falling back to article list format")
         return format_article_list(articles)
 
 
