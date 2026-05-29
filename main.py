@@ -136,6 +136,7 @@ def generate_summary(articles, config):
 
     try:
         client = OpenAI(api_key=api_key, base_url=api_base)
+        print(f"  [DEBUG] Calling AI: base={api_base}, model={model}")
         resp = client.chat.completions.create(
             model=model,
             messages=[
@@ -150,24 +151,26 @@ def generate_summary(articles, config):
         )
         content = resp.choices[0].message.content
         print(f"  [DEBUG] AI response length: {len(content) if content else 0} chars")
+        print(f"  [DEBUG] AI response first 300 chars: {(content or '(empty)')[:300]}")
 
         if not content or not content.strip():
-            print("  ⚠️ AI returned empty, using raw article list.")
+            print("  ⚠️ AI returned empty, using fallback.")
             return format_article_list(articles)
 
         return content
     except Exception as e:
-        print(f"  ⚠️ AI failed: {e}")
+        print(f"  ⚠️ AI failed: {type(e).__name__}: {e}")
+        print(f"  [DEBUG] Falling back to article list format")
         return format_article_list(articles)
 
 
 def format_article_list(articles):
-    """Fallback: format articles with bilingual title and link."""
+    """Fallback: format articles with bilingual title + Chinese description + link."""
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     lines = [f"📡 今日新闻速递 | {today}", f"共 {len(articles)} 篇文章", ""]
 
     for i, a in enumerate(articles, 1):
-        desc = a["description"][:100].strip()
+        desc = a["description"][:150].strip()
         if desc:
             desc = desc + "..."
         lines.append(f"📰 {a['title']}")
