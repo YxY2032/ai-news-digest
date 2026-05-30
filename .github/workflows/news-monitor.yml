@@ -2,7 +2,8 @@ name: News Monitor
 
 on:
   schedule:
-    - cron: '13,43 * * * *'
+    - cron: '13 * * * *'
+    - cron: '43 * * * *'
   workflow_dispatch:
 
 jobs:
