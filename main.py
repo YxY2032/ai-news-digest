@@ -62,6 +62,10 @@ def fetch_rss(feeds, hours=24, max_articles=30):
 
     for feed_cfg in feeds:
         try:
+            url = feed_cfg["url"]
+            if url.endswith(".json"):
+                articles.extend(fetch_json_feed(feed_cfg, cutoff))
+                continue
             print(f"  Fetching {feed_cfg.get('name', feed_cfg['url'])}...")
             feed = feedparser.parse(feed_cfg["url"])
             source = feed_cfg.get(
@@ -118,6 +122,53 @@ def _parse_entry_time(entry):
                 pass
     return None
 
+
+
+def fetch_json_feed(feed_cfg, cutoff):
+    """Fetch articles from a JSON feed (e.g., CISA KEV)."""
+    url = feed_cfg["url"]
+    source = feed_cfg.get("name", url)
+    category = feed_cfg.get("category", "General")
+    try:
+        resp = requests.get(url, timeout=30, headers={"User-Agent": "AI-News-Digest/1.0"})
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        print(f"  ⚠️  Failed to fetch JSON {url}: {e}")
+        return []
+    articles = []
+    # CISA KEV format
+    if "vulnerabilities" in data:
+        for vuln in data["vulnerabilities"]:
+            date_str = vuln.get("dateAdded", "")
+            try:
+                pub_time = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            except Exception:
+                pub_time = None
+            if not pub_time or pub_time <= cutoff:
+                continue
+            cve_id = vuln.get("cveID", "Unknown")
+            vendor = vuln.get("vendorProject", "")
+            product = vuln.get("product", "")
+            desc = vuln.get("shortDescription", "")
+            vuln_name = vuln.get("vulnerabilityName", "")
+            title = f"{cve_id}: {vuln_name}" if vuln_name else f"{cve_id}: {vendor} {product}"
+            articles.append({
+                "guid": cve_id,
+                "title": title,
+                "link": f"https://nvd.nist.gov/vuln/detail/{cve_id}",
+                "description": f"{vendor} {product}: {desc}"[:500],
+                "published": pub_time.strftime("%Y-%m-%d %H:%M UTC"),
+                "source": source,
+                "category": category,
+            })
+    else:
+        # Unknown JSON format — try generic array detection
+        items = data if isinstance(data, list) else data.get("items", data.get("entries", []))
+        for item in items[:max_articles] if isinstance(items, list) else []:
+            # best-effort: use first string field as title, first url field as link
+            pass  # extend as needed
+    return articles
 
 def _strip_html(text):
     return re.sub(r"<[^>]+>", "", text).strip()

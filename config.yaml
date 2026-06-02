@@ -105,6 +105,10 @@ feeds:
     url: https://xlab.tencent.com/cn/atom.xml
     category: 安全
 
+  - name: "CISA KEV (Known Exploited Vulns)"
+    url: https://kevfeed.vercel.app/CISA-KEV.json
+    category: 安全
+
   # ── AI（9 个）──────────────────────────────────────────────
   - name: MIT Technology Review
     url: https://www.technologyreview.com/feed/
