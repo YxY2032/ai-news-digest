@@ -81,6 +81,10 @@ feeds:
     url: https://github.com/security-advisories.atom
     category: 安全
 
+  - name: "CVE Feed (High Severity)"
+    url: https://cvefeed.io/rssfeed/severity/high.xml
+    category: 安全
+
   # ── AI（9 个）──────────────────────────────────────────────
   - name: MIT Technology Review
     url: https://www.technologyreview.com/feed/
