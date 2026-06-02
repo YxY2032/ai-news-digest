@@ -93,8 +93,12 @@ feeds:
     url: https://paper.seebug.org/rss
     category: 安全
 
-  - name: "ZDI (Zero Day Initiative)"
+  - name: "ZDI Published"
     url: https://www.zerodayinitiative.com/rss/published/
+    category: 安全
+
+  - name: "ZDI Upcoming"
+    url: https://www.zerodayinitiative.com/rss/upcoming/
     category: 安全
 
   # ── AI（9 个）──────────────────────────────────────────────
