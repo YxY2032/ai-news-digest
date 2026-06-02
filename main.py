@@ -162,12 +162,7 @@ def fetch_json_feed(feed_cfg, cutoff):
                 "source": source,
                 "category": category,
             })
-    else:
-        # Unknown JSON format — try generic array detection
-        items = data if isinstance(data, list) else data.get("items", data.get("entries", []))
-        for item in items[:max_articles] if isinstance(items, list) else []:
-            # best-effort: use first string field as title, first url field as link
-            pass  # extend as needed
+
     return articles
 
 def _strip_html(text):
