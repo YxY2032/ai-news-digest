@@ -106,6 +106,10 @@ feeds:
     url: https://garymarcus.substack.com/feed
     category: AI
 
+  - name: "Anthropic News"
+    url: https://rsshub.app/anthropic/news
+    category: AI
+
   - name: "Anthropic Research"
     url: https://rsshub.app/anthropic/research
     category: AI
