@@ -113,6 +113,10 @@ feeds:
     url: https://www.microsoft.com/en-us/security/blog/feed/
     category: 安全
 
+  - name: "SecurityWeek"
+    url: https://www.securityweek.com/feed/
+    category: 安全
+
   # ── AI（9 个）──────────────────────────────────────────────
   - name: MIT Technology Review
     url: https://www.technologyreview.com/feed/
