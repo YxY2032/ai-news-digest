@@ -158,6 +158,10 @@ feeds:
     url: https://blog.research.google/feeds/posts/default
     category: AI
 
+  - name: "Smol AI News"
+    url: https://news.smol.ai/rss.xml
+    category: AI
+
   # ── 科技资讯（4 个）────────────────────────────────────────
   - name: Ars Technica
     url: https://feeds.arstechnica.com/arstechnica/index
